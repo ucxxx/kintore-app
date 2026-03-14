@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="筋トレログ" />
+  <meta name="theme-color" content="#0c0c14" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <title>筋トレログ</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body, #root { height: 100%; background: #0c0c14; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; }
+    input, select, button { font-family: inherit; }
+    input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useState, useRef } = React;
+
+    const ACCENT = "#7C3AED";
+    const EXERCISES = [
+      { name: "ベンチプレス", group: "胸" },
+      { name: "インクラインDB", group: "胸" },
+      { name: "スクワット", group: "脚" },
+      { name: "レッグプレス", group: "脚" },
+      { name: "デッドリフト", group: "背中" },
+      { name: "ラットプルダウン", group: "背中" },
+      { name: "懸垂", group: "背中" },
+      { name: "ショルダープレス", group: "肩" },
+      { name: "ダンベルカール", group: "腕" },
+      { name: "ディップス", group: "腕" },
+      { name: "腹筋", group: "体幹" },
+    ];
+    const FATIGUE = ["最高", "良好", "普通", "疲れ気味", "限界"];
+    const GOALS = ["筋肥大", "筋力向上", "ダイエット", "体力維持"];
+
+    function App() {
+      const [tab, setTab] = useState("record");
+      const [logs, setLogs] = useState([]);
+      const [ex, setEx] = useState(EXERCISES[0].name);
+      const [weight, setWeight] = useState("");
+      const [reps, setReps] = useState("");
+      const [sets, setSets] = useState("");
+      const [flash, setFlash] = useState(false);
+      const [fatigue, setFatigue] = useState(2);
+      const [goal, setGoal] = useState("筋肥大");
+      const [note, setNote] = useState("");
+      const [aiResult, setAiResult] = useState(null);
+      const [loading, setLoading] = useState(false);
+      const weightRef = useRef(null);
+
+      const groupOf = n => EXERCISES.find(e => e.name === n)?.group || "体幹";
+      const totalVol = logs.reduce((s, l) => s + l.weight * l.reps * l.sets, 0);
+      const totalSets = logs.length;
+
+      const addLog = () => {
+        if (!weight || !reps || !sets) return;
+        setLogs(p => [{ id: Date.now(), exercise: ex, weight: parseFloat(weight), reps: parseInt(reps), sets: parseInt(sets), group: groupOf(ex) }, ...p]);
+        setWeight(""); setReps(""); setSets("");
+        setFlash(true); setTimeout(() => setFlash(false), 800);
+        weightRef.current?.focus();
+      };
+
+      const getAI = async () => {
+        setLoading(true); setAiResult(null);
+        const summary = logs.length ? logs.map(l => `${l.exercise} ${l.weight}kg×${l.reps}回×${l.sets}セット`).join("、") : "記録なし";
+        const prompt = `プロのパーソナルトレーナーとして今日の筋トレメニューを提案。
+疲労度: ${FATIGUE[fatigue]}、目標: ${goal}、本日の記録: ${summary}、備考: ${note||"なし"}
+JSONのみ返答（余分テキスト不要）:
+{"comment":"30字以内のアドバイス","menu":[{"name":"種目","sets":3,"reps":"8-10","weight":"目安","tip":"コツ一言"}]}
+メニューは3〜5種目。`;
+        try {
+          const res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: [{ role: "user", content: prompt }] })
+          });
+          const data = await res.json();
+          const text = data.content?.map(b => b.text || "").join("") || "";
+          setAiResult(JSON.parse(text.replace(/```json|```/g, "").trim()));
+        } catch { setAiResult({ error: true }); }
+        setLoading(false);
+      };
+
+      const grouped = EXERCISES.reduce((acc, e) => { (acc[e.group] = acc[e.group] || []).push(e.name); return acc; }, {});
+      const inp = { padding: "10px 12px", fontSize: 16, border: "0.5px solid rgba(255,255,255,0.12)", borderRadius: 8, background: "rgba(255,255,255,0.07)", color: "#f0f0f0", outline: "none", width: "100%", boxSizing: "border-box" };
+
+      return (
+        <div style={{ fontFamily: "-apple-system, sans-serif", maxWidth: 520, margin: "0 auto", minHeight: "100vh", display: "flex", flexDirection: "column", paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
+
+          <div style={{ background: "#0c0c14", padding: "1.25rem 1.25rem 0", flexShrink: 0 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.25rem" }}>
+              <div>
+                <p style={{ fontSize: 11, letterSpacing: "0.1em", color: "#555", margin: "0 0 4px", fontWeight: 500 }}>
+                  {new Date().toLocaleDateString("ja-JP", { month: "long", day: "numeric", weekday: "short" })}
+                </p>
+                <p style={{ fontSize: 22, fontWeight: 500, color: "#f0f0f0", margin: 0 }}>筋トレログ</p>
+              </div>
+              {totalSets > 0 && (
+                <div style={{ display: "flex", gap: 16, alignItems: "flex-end" }}>
+                  <div style={{ textAlign: "right" }}>
+                    <p style={{ fontSize: 10, color: "#555", margin: "0 0 2px", letterSpacing: "0.06em" }}>SETS</p>
+                    <p style={{ fontSize: 20, fontWeight: 500, color: "#f0f0f0", margin: 0 }}>{totalSets}</p>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <p style={{ fontSize: 10, color: "#555", margin: "0 0 2px", letterSpacing: "0.06em" }}>VOLUME</p>
+                    <p style={{ fontSize: 20, fontWeight: 500, color: ACCENT, margin: 0 }}>{Math.round(totalVol).toLocaleString()}<span style={{ fontSize: 11, color: "#555", marginLeft: 2 }}>kg</span></p>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={{ display: "flex", borderBottom: "0.5px solid rgba(255,255,255,0.08)" }}>
+              {[["record","記録"],["ai","AI提案"]].map(([id,label]) => (
+                <button key={id} onClick={() => setTab(id)} style={{ padding: "9px 18px", fontSize: 13, fontWeight: tab===id?500:400, background: "none", border: "none", borderBottom: tab===id?`2px solid ${ACCENT}`:"2px solid transparent", cursor: "pointer", color: tab===id?"#f0f0f0":"#555", marginBottom: -1, transition: "color 0.15s" }}>{label}</button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ background: "#111119", flex: 1, padding: "1.25rem", overflowY: "auto" }}>
+
+            {tab === "record" && (
+              <div>
+                <div style={{ background: "#17171f", border: "0.5px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: "1.1rem", marginBottom: "1.25rem" }}>
+                  <div style={{ marginBottom: 14 }}>
+                    <p style={{ fontSize: 10, color: "#555", margin: "0 0 6px", letterSpacing: "0.08em", fontWeight: 500 }}>種目</p>
+                    <select value={ex} onChange={e => setEx(e.target.value)} style={{ ...inp, appearance: "none" }}>
+                      {Object.entries(grouped).map(([grp, names]) => (
+                        <optgroup key={grp} label={grp} style={{ background: "#17171f" }}>
+                          {names.map(n => <option key={n} style={{ background: "#17171f" }}>{n}</option>)}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
+                    {[["重量","kg",weight,setWeight,weightRef],["回数","回",reps,setReps,null],["セット","set",sets,setSets,null]].map(([label,unit,val,setter,ref]) => (
+                      <div key={label}>
+                        <p style={{ fontSize: 10, color: "#555", margin: "0 0 5px", letterSpacing: "0.08em", fontWeight: 500 }}>{label} <span style={{ color: "#333" }}>({unit})</span></p>
+                        <input ref={ref} type="number" inputMode="decimal" placeholder="0" value={val} onChange={e => setter(e.target.value)} onKeyDown={e => e.key==="Enter"&&addLog()} style={{ ...inp, textAlign: "center" }} />
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={addLog} style={{ width: "100%", padding: "13px", fontSize: 15, fontWeight: 500, background: flash?"#059669":ACCENT, border: "none", borderRadius: 8, cursor: "pointer", color: "#fff", transition: "background 0.3s" }}>
+                    {flash ? "追加しました ✓" : "セット追加"}
+                  </button>
+                </div>
+
+                {logs.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "3rem 0", color: "#333" }}>
+                    <div style={{ fontSize: 36, marginBottom: 10, opacity: 0.4 }}>◎</div>
+                    <p style={{ fontSize: 13 }}>セットを追加してスタート</p>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {logs.map((l, i) => (
+                      <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "#17171f", border: "0.5px solid rgba(255,255,255,0.06)", borderRadius: 10, borderLeft: `3px solid ${i===0?ACCENT:"rgba(255,255,255,0.1)"}` }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 14, fontWeight: 500, color: "#e0e0e0", margin: "0 0 2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.exercise}</p>
+                          <p style={{ fontSize: 11, color: "#555", margin: 0 }}>{l.group}</p>
+                        </div>
+                        <p style={{ fontSize: 13, color: "#888", margin: 0, whiteSpace: "nowrap" }}>{l.weight}kg × {l.reps} × {l.sets}</p>
+                        <p style={{ fontSize: 12, color: ACCENT, margin: 0, fontWeight: 500, whiteSpace: "nowrap", minWidth: 48, textAlign: "right" }}>{Math.round(l.weight*l.reps*l.sets).toLocaleString()}<span style={{ fontSize: 10, color: "#555" }}>kg</span></p>
+                        <button onClick={() => setLogs(p => p.filter(x => x.id !== l.id))} style={{ fontSize: 18, color: "#333", background: "none", border: "none", cursor: "pointer", padding: "0 4px", lineHeight: 1 }}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {tab === "ai" && (
+              <div>
+                <div style={{ background: "#17171f", border: "0.5px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: "1.1rem", marginBottom: "1.25rem" }}>
+                  <div style={{ marginBottom: 18 }}>
+                    <p style={{ fontSize: 10, color: "#555", margin: "0 0 8px", letterSpacing: "0.08em", fontWeight: 500 }}>疲労度</p>
+                    <div style={{ display: "flex", gap: 5 }}>
+                      {FATIGUE.map((f, i) => (
+                        <button key={i} onClick={() => setFatigue(i)} style={{ flex: 1, padding: "8px 2px", fontSize: 12, borderRadius: 7, cursor: "pointer", background: fatigue===i?ACCENT:"rgba(255,255,255,0.05)", border: `0.5px solid ${fatigue===i?ACCENT:"rgba(255,255,255,0.08)"}`, color: fatigue===i?"#fff":"#555", fontWeight: fatigue===i?500:400, transition: "all 0.15s" }}>{f}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: 18 }}>
+                    <p style={{ fontSize: 10, color: "#555", margin: "0 0 8px", letterSpacing: "0.08em", fontWeight: 500 }}>目標</p>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
+                      {GOALS.map(g => (
+                        <button key={g} onClick={() => setGoal(g)} style={{ padding: "10px", fontSize: 14, borderRadius: 8, cursor: "pointer", background: goal===g?ACCENT:"rgba(255,255,255,0.05)", border: `0.5px solid ${goal===g?ACCENT:"rgba(255,255,255,0.08)"}`, color: goal===g?"#fff":"#666", fontWeight: goal===g?500:400, transition: "all 0.15s" }}>{g}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: 18 }}>
+                    <p style={{ fontSize: 10, color: "#555", margin: "0 0 6px", letterSpacing: "0.08em", fontWeight: 500 }}>備考 <span style={{ fontWeight: 400 }}>(任意)</span></p>
+                    <input type="text" placeholder="例: 肩の違和感あり" value={note} onChange={e => setNote(e.target.value)} style={inp} />
+                  </div>
+                  {logs.length > 0 && (
+                    <div style={{ background: `${ACCENT}18`, border: `0.5px solid ${ACCENT}33`, borderRadius: 8, padding: "9px 12px", marginBottom: 14 }}>
+                      <p style={{ fontSize: 10, color: ACCENT, margin: "0 0 3px", fontWeight: 500 }}>今日の記録を参考に提案</p>
+                      <p style={{ fontSize: 11, color: "#666", margin: 0, lineHeight: 1.6 }}>{logs.map(l => `${l.exercise} ${l.weight}kg×${l.reps}×${l.sets}`).join(" · ")}</p>
+                    </div>
+                  )}
+                  <button onClick={getAI} disabled={loading} style={{ width: "100%", padding: "13px", fontSize: 15, fontWeight: 500, background: loading?"#2a2a3a":ACCENT, border: "none", borderRadius: 8, cursor: loading?"not-allowed":"pointer", color: loading?"#555":"#fff", transition: "background 0.2s" }}>
+                    {loading ? "生成中..." : "AIにメニューを提案してもらう"}
+                  </button>
+                </div>
+
+                {aiResult?.error && (
+                  <div style={{ background: "#17171f", border: "0.5px solid rgba(255,0,0,0.2)", borderRadius: 12, padding: "1rem", textAlign: "center", color: "#e57373", fontSize: 14 }}>取得に失敗しました。もう一度お試しください。</div>
+                )}
+                {aiResult && !aiResult.error && (
+                  <div>
+                    <div style={{ padding: "12px 2px 16px", borderBottom: "0.5px solid rgba(255,255,255,0.08)", marginBottom: 14 }}>
+                      <p style={{ fontSize: 14, color: "#c0b8f0", margin: 0, lineHeight: 1.7, fontWeight: 500 }}>{aiResult.comment}</p>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {aiResult.menu?.map((m, i) => (
+                        <div key={i} style={{ background: "#17171f", border: "0.5px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: "12px 14px", display: "grid", gridTemplateColumns: "24px 1fr auto", gap: 12, alignItems: "start" }}>
+                          <div style={{ width: 24, height: 24, borderRadius: "50%", background: `${ACCENT}22`, border: `0.5px solid ${ACCENT}44`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 500, color: ACCENT }}>{i+1}</div>
+                          <div>
+                            <p style={{ fontSize: 14, fontWeight: 500, margin: "0 0 3px", color: "#e0e0e0" }}>{m.name}</p>
+                            <p style={{ fontSize: 11, color: "#555", margin: 0, lineHeight: 1.4 }}>{m.tip}</p>
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            <p style={{ fontSize: 13, fontWeight: 500, margin: "0 0 2px", color: "#e0e0e0" }}>{m.sets}セット × {m.reps}</p>
+                            <p style={{ fontSize: 11, color: "#555", margin: 0 }}>{m.weight}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js"));
+    }
+  </script>
+</body>
+</html>
